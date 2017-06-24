@@ -244,7 +244,7 @@ RSpec.describe "gemcutter's dependency API" do
     end
   end
 
-  it "fetches again when more dependencies are found in subsequent sources" do
+  it "fetches again when more dependencies are found in subsequent sources", :bundler => "< 2" do
     build_repo2 do
       build_gem "back_deps" do |s|
         s.add_dependency "foo"
@@ -259,7 +259,26 @@ RSpec.describe "gemcutter's dependency API" do
     G
 
     bundle :install, :artifice => "endpoint_extra"
-    expect(the_bundle).to include_gems "back_deps 1.0"
+    expect(the_bundle).to include_gems "back_deps 1.0", "foo 1.0"
+  end
+
+  it "fetches again when more dependencies are found in subsequent sources using blocks" do
+    build_repo2 do
+      build_gem "back_deps" do |s|
+        s.add_dependency "foo"
+      end
+      FileUtils.rm_rf Dir[gem_repo2("gems/foo-*.gem")]
+    end
+
+    gemfile <<-G
+      source "#{source_uri}"
+      source "#{source_uri}/extra" do
+        gem "back_deps"
+      end
+    G
+
+    bundle :install, :artifice => "endpoint_extra"
+    expect(the_bundle).to include_gems "back_deps 1.0", "foo 1.0"
   end
 
   it "fetches gem versions even when those gems are already installed" do
@@ -284,7 +303,7 @@ RSpec.describe "gemcutter's dependency API" do
     expect(the_bundle).to include_gems "rack 1.2"
   end
 
-  it "considers all possible versions of dependencies from all api gem sources" do
+  it "considers all possible versions of dependencies from all api gem sources", :bundler => "< 2" do
     # In this scenario, the gem "somegem" only exists in repo4.  It depends on specific version of activesupport that
     # exists only in repo1.  There happens also be a version of activesupport in repo4, but not the one that version 1.0.0
     # of somegem wants. This test makes sure that bundler actually finds version 1.2.3 of active support in the other
@@ -300,6 +319,31 @@ RSpec.describe "gemcutter's dependency API" do
       source "#{source_uri}"
       source "#{source_uri}/extra"
       gem 'somegem', '1.0.0'
+    G
+
+    bundle :install, :artifice => "endpoint_extra_api"
+
+    expect(the_bundle).to include_gems "somegem 1.0.0"
+    expect(the_bundle).to include_gems "activesupport 1.2.3"
+  end
+
+  it "considers all possible versions of dependencies from all api gem sources using blocks" do
+    # In this scenario, the gem "somegem" only exists in repo4.  It depends on specific version of activesupport that
+    # exists only in repo1.  There happens also be a version of activesupport in repo4, but not the one that version 1.0.0
+    # of somegem wants. This test makes sure that bundler actually finds version 1.2.3 of active support in the other
+    # repo and installs it.
+    build_repo4 do
+      build_gem "activesupport", "1.2.0"
+      build_gem "somegem", "1.0.0" do |s|
+        s.add_dependency "activesupport", "1.2.3" # This version exists only in repo1
+      end
+    end
+
+    gemfile <<-G
+      source "#{source_uri}"
+      source "#{source_uri}/extra" do
+        gem 'somegem', '1.0.0'
+      end
     G
 
     bundle :install, :artifice => "endpoint_extra_api"
@@ -328,7 +372,7 @@ RSpec.describe "gemcutter's dependency API" do
     expect(out).to include("Fetching source index from http://localgemserver.test/extra")
   end
 
-  it "does not fetch every spec if the index of gems is large when doing back deps" do
+  it "does not fetch every spec if the index of gems is large when doing back deps", :bundler => "< 2" do
     build_repo2 do
       build_gem "back_deps" do |s|
         s.add_dependency "foo"
@@ -346,6 +390,31 @@ RSpec.describe "gemcutter's dependency API" do
       source "#{source_uri}"
       source "#{source_uri}/extra"
       gem "back_deps"
+    G
+
+    bundle :install, :artifice => "endpoint_extra_missing"
+    expect(the_bundle).to include_gems "back_deps 1.0"
+  end
+
+  it "does not fetch every spec if the index of gems is large when doing back deps using blocks" do
+    build_repo2 do
+      build_gem "back_deps" do |s|
+        s.add_dependency "foo"
+      end
+      build_gem "missing"
+      # need to hit the limit
+      1.upto(Bundler::Source::Rubygems::API_REQUEST_LIMIT) do |i|
+        build_gem "gem#{i}"
+      end
+
+      FileUtils.rm_rf Dir[gem_repo2("gems/foo-*.gem")]
+    end
+
+    gemfile <<-G
+      source "#{source_uri}"
+      source "#{source_uri}/extra" do
+        gem "back_deps"
+      end
     G
 
     bundle :install, :artifice => "endpoint_extra_missing"
